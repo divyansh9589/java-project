@@ -1,0 +1,105 @@
+import java.sql.*;
+import java.util.*;
+
+public class ECommerceRecommendation {
+    private static final String URL = "jdbc:mysql://localhost:3306/ecommerce";
+    private static final String USER = "root";
+    private static final String PASSWORD = "Kardi@143";
+
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+
+        System.out.print("Enter User ID for recommendations: ");
+        int userId = scanner.nextInt();
+
+        List<Integer> recommendedProductIds = getRecommendedProductIds(userId);
+        if (recommendedProductIds.isEmpty()) {
+            System.out.println("No recommendations available.");
+            return;
+        }
+
+        System.out.println("Recommended Products:");
+        List<String> productNames = getProductNames(recommendedProductIds);
+        for (int i = 0; i < productNames.size(); i++) {
+            System.out.println((i + 1) + ". " + productNames.get(i));
+        }
+
+        System.out.println("\nProvide feedback (like/dislike) for each product:");
+        for (int i = 0; i < recommendedProductIds.size(); i++) {
+            System.out.print("Do you like '" + productNames.get(i) + "'? (like/dislike): ");
+            String feedback = scanner.next();
+            storeFeedback(userId, recommendedProductIds.get(i), feedback);
+        }
+
+        System.out.println("Thank you for your feedback!");
+        scanner.close();
+    }
+
+    public static List<Integer> getRecommendedProductIds(int userId) {
+        List<Integer> recommendedProducts = new ArrayList<>();
+        String sql = "SELECT DISTINCT r.product_id FROM ratings r "
+                + "WHERE r.rating >= 4 AND r.user_id != ? "
+                + "AND r.product_id IN (SELECT product_id FROM ratings WHERE user_id = ? AND rating >= 4) "
+                + "LIMIT 5";
+
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, userId);
+            stmt.setInt(2, userId);
+
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                recommendedProducts.add(rs.getInt("product_id"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return recommendedProducts;
+    }
+
+    public static List<String> getProductNames(List<Integer> productIds) {
+        List<String> productNames = new ArrayList<>();
+        if (productIds.isEmpty()) return productNames;
+
+        String placeholders = String.join(",", Collections.nCopies(productIds.size(), "?"));
+        String sql = "SELECT product_name FROM products WHERE product_id IN (" + placeholders + ")";
+
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            for (int i = 0; i < productIds.size(); i++) {
+                stmt.setInt(i + 1, productIds.get(i));
+            }
+
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                productNames.add(rs.getString("product_name"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return productNames;
+    }
+
+    public static void storeFeedback(int userId, int productId, String feedback) {
+        if (!feedback.equalsIgnoreCase("like") && !feedback.equalsIgnoreCase("dislike")) {
+            System.out.println("Invalid feedback. Skipping...");
+            return;
+        }
+
+        String sql = "INSERT INTO feedback (user_id, product_id, feedback) VALUES (?, ?, ?)";
+
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, userId);
+            stmt.setInt(2, productId);
+            stmt.setString(3, feedback.toLowerCase());
+
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+}
